@@ -167,7 +167,7 @@ namespace NS
                     string correctedCode = responseData.choices[0].message.content;
                     Debug.Log("Generated code with check: "  + correctedCode);
                     outputText.text = correctedCode;
-                    var (correctedVariables, correctedMethods, correctedUsingDirectives) = ExtractCodeElements(correctedCode);
+                    var (correctedUsingDirectives, correctedVariables, correctedMethods) = ExtractCodeElements(correctedCode);
 
                     Dictionary<string, List<string>> correctedLibraries = new Dictionary<string, List<string>>
                     {
@@ -184,18 +184,18 @@ namespace NS
             }
         }
 
-        void SendToGameManager(Dictionary<string, List<string>> libraries, Dictionary<string, object> variables, Dictionary<string, string> methods)
+        void SendToGameManager(Dictionary<string, List<string>> libraries, List<VariableInfo> variables, Dictionary<string, string> methods)
         {
             GameManager gameManager = FindObjectOfType<GameManager>();
             if (gameManager != null)
             {
-                gameManager.UpdateGameCode(libraries, methods, variables);
+                gameManager.UpdateGameCode(libraries, variables, methods);
             }
         }
 
-        (Dictionary<string, object> variables, Dictionary<string, string> methods, List<string> usingDirectives) ExtractCodeElements(string code)
+        (List<string> usingDirectives, List<VariableInfo> variables, Dictionary<string, string> methods) ExtractCodeElements(string code)
         {
-            Dictionary<string, object> variables = new Dictionary<string, object>();
+            List<VariableInfo> variables = new List<VariableInfo>();
             Dictionary<string, string> methods = new Dictionary<string, string>();
             List<string> usingDirectives = new List<string>();
 
@@ -219,6 +219,7 @@ namespace NS
                 if (!IsInsideMethod(match.Index, code))
                 {
                     string variableTypeString = match.Groups[1].Value;
+                    Debug.Log("vts:" + variableTypeString);
                     string variableName = match.Groups[2].Value;
                     string variableValueString = match.Groups[3].Value?.TrimStart('=', ' ');
 
@@ -227,7 +228,7 @@ namespace NS
                     {
                         object value = GetDefaultValue(variableType, variableValueString);
 
-                        variables.Add(variableName, value);
+                        variables.Add(new VariableInfo(variableName, variableType, value));
                     }
                 }
             }
@@ -243,7 +244,7 @@ namespace NS
                 methods[methodName] = methodBody;
             }
 
-            return (variables, methods, usingDirectives);
+            return (usingDirectives, variables, methods);
         }
 
         bool IsInsideMethod(int index, string code)

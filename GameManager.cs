@@ -13,7 +13,7 @@ namespace NS
     public class GameManager : MonoBehaviour
     {
         private Dictionary<string, Action<GameObject>> compiledMethods = new Dictionary<string, Action<GameObject>>();
-        private Dictionary<string, object> variables = new Dictionary<string, object>();
+        private List<VariableInfo> variables = new List<VariableInfo>();
 
         public Sprite spriteToAssign; // Référence au sprite à attribuer au GameObject
         private GameObject targetGameObject;
@@ -62,7 +62,7 @@ namespace NS
             targetGameObject.transform.position = Vector3.zero;
         }
 
-        public void UpdateGameCode(Dictionary<string, List<string>> libraries, Dictionary<string, string> methods, Dictionary<string, object> variables)
+        public void UpdateGameCode(Dictionary<string, List<string>> libraries, List<VariableInfo> variables, Dictionary<string, string> methods)
         {
             CreateTargetGameObject();
             InitializeVariables(variables);
@@ -77,14 +77,14 @@ namespace NS
         }
 
 
-        private void InitializeVariables(Dictionary<string, object> variables)
+        private void InitializeVariables(List<VariableInfo> variables)
         {
             this.variables.Clear();
 
             foreach (var variable in variables)
             {
-                Debug.Log("Adding variable: " + variable.Key + " with value: " + variable.Value);
-                this.variables.Add(variable.Key, variable.Value);
+                Debug.Log("Adding variable: " + variable.VariableName + " with type " + variable.VariableType.Name + " with the value " + variable.Value);
+                this.variables.Add(variable);
             }
         }
 
@@ -93,23 +93,36 @@ namespace NS
             string variableDeclarations = "";
             foreach (var variable in variables)
             {
-                string variableType = variable.Value.GetType().Name;
-                string variableName = variable.Key;
-                variableDeclarations += $"public static {variableType} {variableName};\n";
-            }
+                string variableName = variable.VariableName;
+                Type variableType = variable.VariableType;
+                object variableValue = variable.Value;
 
+                // Gérer la conversion de la valeur de la variable en chaîne de caractères appropriée
+                string valueString = variableValue != null ? variableValue.ToString() : "null";
+                if (variableType == typeof(string))
+                {
+                    valueString = $"\"{valueString}\"";
+                }
+                else if (variableType == typeof(float))
+                {
+                    valueString = valueString + "f";
+                }
+
+                variableDeclarations += $"public {variableType.Name} {variableName} = {valueString};\n";
+            }
+            Debug.Log("vd:" + variableDeclarations);
             usingDirectives.Add("using System;");
             string usingStatements = string.Join("\n", usingDirectives);
 
             string codeToCompile = $@"
-                {usingStatements}
-                public class DynamicCode {{
-                    {variableDeclarations}
-                    public static void {methodName}(GameObject currentGameObject) {{
-                        var transform = currentGameObject.transform;
-                        {methodBody}
-                    }}
-                }}";
+            {usingStatements}
+            public class DynamicCode {{
+                {variableDeclarations}
+                public void {methodName}(GameObject currentGameObject) {{
+                    var transform = currentGameObject.transform;
+                    {methodBody}
+                }}
+            }}";
 
             SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(codeToCompile);
             CSharpCompilation compilation = CSharpCompilation.Create(
@@ -147,16 +160,18 @@ namespace NS
                     Type program = assembly.GetType("DynamicCode");
                     MethodInfo method = program.GetMethod(methodName);
 
+                    object instance = Activator.CreateInstance(program);
+
                     foreach (var variable in variables)
                     {
-                        FieldInfo field = program.GetField(variable.Key);
+                        FieldInfo field = program.GetField(variable.VariableName);
                         if (field != null)
                         {
-                            field.SetValue(null, variable.Value);
+                            field.SetValue(instance, variable.Value);
                         }
                     }
 
-                    return (Action<GameObject>)Delegate.CreateDelegate(typeof(Action<GameObject>), method);
+                    return (Action<GameObject>)Delegate.CreateDelegate(typeof(Action<GameObject>), instance, method);
                 }
             }
         }
